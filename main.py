@@ -38,7 +38,13 @@ BASE_LAYOUT = """
 </head>
 <body class="font-sans antialiased min-h-screen flex flex-col items-center justify-center p-6">
     {{ content | safe }}
+    <!-- Vercel Web Analytics -->
     <script defer src="/_vercel/insights/script.js"></script>
+    <!-- Vercel Speed Insights -->
+    <script>
+        window.si = window.si || function () { (window.siq = window.siq || []).push(arguments); };
+    </script>
+    <script defer src="/_vercel/speed-insights/script.js"></script>
 </body>
 </html>
 """
