@@ -1,0 +1,68 @@
+from flask import Flask, render_template_string, request, session, redirect, url_for
+from replit import db
+import os
+
+app = Flask(__name__)
+app.secret_key = os.urandom(24)  # random secret for sessions
+
+# Mock user (in real version, use Telegram Login)
+# For testing, assume chat_id from URL param
+@app.route('/')
+def dashboard():
+    chat_id = request.args.get('chat_id', '7375579725')  # passed from Telegram
+    tier = db['users'].get(chat_id, {}).get('tier', 'basic')
+
+    # Get alerts
+    all_alerts = db.get('alerts', [])
+
+    # Filter alerts based on tier
+    filtered_alerts = []
+    for alert in all_alerts:
+        if tier == 'basic' and not alert['is_pre_dip']:
+            filtered_alerts.append(alert)
+        elif tier == 'pro':
+            filtered_alerts.append(alert)  # sees everything
+        elif tier == 'elite':
+            filtered_alerts.append(alert)  # sees everything + extras
+
+    html = f"""
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+      <meta charset="UTF-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <title>Echo Swap Dashboard</title>
+      <script src="https://cdn.tailwindcss.com"></script>
+    </head>
+    <body class="bg-black text-white p-6">
+      <div class="max-w-4xl mx-auto">
+        <h1 class="text-4xl font-bold text-center mb-8 text-cyan-400">Echo Swap</h1>
+        <p class="text-center text-gray-400 mb-8">Tier: {tier.capitalize()} • Chat ID: {chat_id}</p>
+
+        <div class="bg-gray-900 p-6 rounded-xl mb-8">
+          <h2 class="text-2xl mb-4">Your Alerts</h2>
+          <div class="space-y-4 max-h-96 overflow-y-auto">
+            {{% if filtered_alerts %}}
+              {{% for alert in filtered_alerts %}}
+                <div class="bg-gray-800 p-4 rounded-lg">
+                  <p class="text-sm text-gray-400">{{ alert['time'] }}</p>
+                  <p class="font-semibold">{{ alert['msg'] }}</p>
+                  {{% if alert['confidence'] %}}
+                    <p class="text-sm text-cyan-300">Confidence: {{ alert['confidence'] }}/100</p>
+                  {{% endif %}}
+                </div>
+              {{% endfor %}}
+            {{% else %}}
+              <p class="text-gray-500">No alerts yet. First dip will appear here.</p>
+            {{% endif %}}
+          </div>
+        </div>
+      </div>
+    </body>
+    </html>
+    """
+
+    return render_template_string(html, filtered_alerts=filtered_alerts)
+
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=8080)
