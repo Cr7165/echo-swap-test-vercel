@@ -32,9 +32,13 @@ BASE_LAYOUT = """
             box-shadow: 0 0 20px rgba(6, 182, 212, 0.4);
         }
     </style>
+    <script>
+        window.va = window.va || function () { (window.vaq = window.vaq || []).push(arguments); };
+    </script>
 </head>
 <body class="font-sans antialiased min-h-screen flex flex-col items-center justify-center p-6">
     {{ content | safe }}
+    <script defer src="/_vercel/insights/script.js"></script>
 </body>
 </html>
 """
