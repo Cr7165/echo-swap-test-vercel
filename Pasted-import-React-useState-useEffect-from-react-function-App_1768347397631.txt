@@ -1,0 +1,187 @@
+import React, { useState, useEffect } from 'react';
+
+function App() {
+  const [solPrice, setSolPrice] = useState(null);
+  const [error, setError] = useState(null);
+  const [activeMenu, setActiveMenu] = useState('dashboard'); // default view
+  const [sidebarOpen, setSidebarOpen] = useState(false); // mobile toggle
+
+  // Time frames (static)
+  const timeFrames = [
+    { label: '5 min', active: true },
+    { label: '15 min', active: false },
+    { label: '1 hour', active: true },
+    { label: '4 hours', active: false },
+    { label: '1 day', active: false },
+  ];
+
+  // Metrics (includes X Sentiment Score)
+  const metrics = [
+    { name: 'Price Drop %', active: true, threshold: '≥ 3%' },
+    { name: 'Volume Spike', active: true },
+    { name: 'X Sentiment Score', active: true, threshold: '≥ 75/100' },
+    { name: 'On-Chain Whale Activity', active: true },
+    { name: 'Confidence Score (0-100)', active: true },
+  ];
+
+  // Fetch SOL price
+  useEffect(() => {
+    const fetchPrice = async () => {
+      try {
+        const res = await fetch('https://api.coinbase.com/v2/prices/SOL-USD/spot');
+        const data = await res.json();
+        setSolPrice(parseFloat(data.data.amount));
+        setError(null);
+      } catch (err) {
+        setError('Failed to fetch price');
+      }
+    };
+
+    fetchPrice();
+    const interval = setInterval(fetchPrice, 30000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const formatPrice = (price) => price ? `$${price.toLocaleString('en-US', { minimumFractionDigits: 2 })}` : '—';
+
+  // Simple placeholder content for other views
+  const renderContent = () => {
+    switch (activeMenu) {
+      case 'dashboard':
+        return (
+          <>
+            {/* Live Price Card */}
+            <div className="bg-gray-900/50 border border-purple-900/30 rounded-xl p-6 mb-8 backdrop-blur-sm">
+              <h2 className="text-xl font-semibold text-cyan-300 mb-4">Current SOL Price</h2>
+              <div className="text-5xl font-bold text-center my-4 bg-clip-text text-transparent bg-gradient-to-r from-cyan-400 to-purple-500">
+                {formatPrice(solPrice)}
+              </div>
+              {error && <p className="text-red-400 text-center text-sm">{error}</p>}
+            </div>
+
+            {/* Time Frames */}
+            <div className="bg-gray-900/50 border border-purple-900/30 rounded-xl p-6 mb-8 backdrop-blur-sm">
+              <h2 className="text-xl font-semibold text-cyan-300 mb-4">Active Time Frames</h2>
+              <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+                {timeFrames.map((tf) => (
+                  <div
+                    key={tf.label}
+                    className={`p-3 rounded-lg text-center border ${
+                      tf.active ? 'border-cyan-500 bg-cyan-950/40 text-cyan-300' : 'border-gray-700 text-gray-500'
+                    }`}
+                  >
+                    {tf.label}
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Trading Metrics */}
+            <div className="bg-gray-900/50 border border-purple-900/30 rounded-xl p-6 backdrop-blur-sm">
+              <h2 className="text-xl font-semibold text-cyan-300 mb-4">Trading Metrics</h2>
+              <div className="space-y-4">
+                {metrics.map((metric) => (
+                  <div key={metric.name} className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className={`w-3 h-3 rounded-full ${metric.active ? 'bg-green-500' : 'bg-gray-600'}`} />
+                      <span className={metric.active ? 'text-white' : 'text-gray-500'}>
+                        {metric.name}
+                      </span>
+                    </div>
+                    {metric.threshold && <span className="text-sm text-gray-400">{metric.threshold}</span>}
+                  </div>
+                ))}
+              </div>
+            </div>
+          </>
+        );
+
+      case 'alerts':
+        return (
+          <div className="bg-gray-900/50 border border-purple-900/30 rounded-xl p-6 backdrop-blur-sm">
+            <h2 className="text-xl font-semibold text-cyan-300 mb-4">Recent Alerts</h2>
+            <p className="text-gray-400">No alerts yet. First dip alert will appear here.</p>
+            {/* Placeholder - add real alert history later */}
+          </div>
+        );
+
+      case 'portfolio':
+        return (
+          <div className="bg-gray-900/50 border border-purple-900/30 rounded-xl p-6 backdrop-blur-sm">
+            <h2 className="text-xl font-semibold text-cyan-300 mb-4">Personal Portfolio</h2>
+            <p className="text-gray-400">Portfolio tracking coming soon. Current SOL value: {formatPrice(solPrice)}</p>
+            {/* Add editable holdings later */}
+          </div>
+        );
+
+      default:
+        return null;
+    }
+  };
+
+  return (
+    <div className="min-h-screen bg-black text-white font-sans flex">
+      {/* Sidebar Menu */}
+      <aside
+        className={`fixed inset-y-0 left-0 z-30 w-64 bg-gray-900/80 backdrop-blur-md border-r border-purple-900/30 transform transition-transform duration-300 lg:relative lg:translate-x-0 ${
+          sidebarOpen ? 'translate-x-0' : '-translate-x-full'
+        }`}
+      >
+        <div className="p-6">
+          <div className="flex items-center justify-between mb-10">
+            <h1 className="text-2xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-cyan-400 to-purple-500">
+              Echo Swap
+            </h1>
+            <button onClick={() => setSidebarOpen(false)} className="lg:hidden">
+              <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+
+          <nav className="space-y-2">
+            {[
+              { label: 'Dashboard', icon: 'layout', active: activeMenu === 'dashboard' },
+              { label: 'Alerts', icon: 'bell', active: activeMenu === 'alerts' },
+              { label: 'Personal Portfolio', icon: 'wallet', active: activeMenu === 'portfolio' },
+            ].map((item) => (
+              <button
+                key={item.label}
+                onClick={() => {
+                  setActiveMenu(item.label.toLowerCase().replace(' ', '-'));
+                  setSidebarOpen(false);
+                }}
+                className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${
+                  item.active
+                    ? 'bg-purple-900/40 text-cyan-300 border border-cyan-500/30'
+                    : 'text-gray-400 hover:bg-gray-800/50'
+                }`}
+              >
+                {/* Simple icon placeholder */}
+                <span className="w-5 h-5">{item.icon}</span>
+                <span>{item.label}</span>
+              </button>
+            ))}
+          </nav>
+        </div>
+      </aside>
+
+      {/* Mobile Menu Toggle */}
+      <button
+        className="fixed top-4 left-4 z-40 lg:hidden bg-gray-900/80 p-2 rounded-lg"
+        onClick={() => setSidebarOpen(true)}
+      >
+        <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+        </svg>
+      </button>
+
+      {/* Main Content */}
+      <main className="flex-1 overflow-auto p-4 lg:p-8">
+        {renderContent()}
+      </main>
+    </div>
+  );
+}
+
+export default App;
