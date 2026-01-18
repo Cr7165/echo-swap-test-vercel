@@ -1,0 +1,549 @@
+import React, { useEffect, useState, useRef } from "react";
+import axios from "axios";
+import {
+  SunMoon,
+  ToggleRight,
+  RefreshCw,
+  AlertCircle,
+  Wallet,
+  Clock,
+  TrendingDown,
+  Activity,
+  Users,
+  MessageCircle,
+  Moon,
+  Sun,
+} from "lucide-react";
+
+/*
+Notes:
+- This single-file React component (App.jsx) expects your project to have:
+  - React 18+
+  - Tailwind CSS configured (or Tailwind CDN linked in index.html)
+  - lucide-react installed
+  - axios installed
+
+If you don't have Tailwind setup, add the Tailwind CDN link into your index.html for quick demo:
+<link href="https://cdn.jsdelivr.net/npm/tailwindcss@3.4.7/dist/tailwind.min.css" rel="stylesheet">
+
+This file provides a responsive, dark-mode-friendly, neon-styled dashboard UI for "Echo Swap".
+*/
+
+export default function App() {
+  // Trading and UI state
+  const [isTradingOn, setIsTradingOn] = useState(true);
+  const [darkMode, setDarkMode] = useState(true);
+
+  // Price state
+  const [solPrice, setSolPrice] = useState(null);
+  const [lastPrice, setLastPrice] = useState(null);
+  const [lastUpdated, setLastUpdated] = useState(null);
+  const pollingRef = useRef(null);
+
+  // Timeframes
+  const [timeframes, setTimeframes] = useState({
+    "5m": true,
+    "15m": false,
+    "1h": false,
+    "4h": false,
+    "1d": false,
+  });
+
+  // Metrics
+  const [metrics, setMetrics] = useState({
+    priceDrop: true,
+    volumeSpike: true,
+    twitterSentiment: true,
+    whaleActivity: true,
+  });
+  const [priceDropThreshold, setPriceDropThreshold] = useState(3); // percent
+  const [confidence, setConfidence] = useState(75); // 0-100
+
+  // Alerts (most recent first). Keep maximum 5.
+  const [alerts, setAlerts] = useState([
+    // initial seed alerts for UI
+    {
+      id: Date.now() - 3600 * 1000,
+      time: new Date(Date.now() - 3600 * 1000).toLocaleTimeString(),
+      type: "Dip",
+      price: "—",
+      detail: "Bot initialized",
+    },
+  ]);
+
+  // Portfolio (hardcoded)
+  const portfolio = {
+    holdingsSOL: 12.345, // amount of SOL
+    holdingsUSDC: 1500, // stablecoins
+    averageBuyPrice: 85.0,
+  };
+
+  // Utility: format USD
+  const fmtUSD = (v) =>
+    v == null ? "—" : v.toLocaleString(undefined, { style: "currency", currency: "USD", maximumFractionDigits: 2 });
+
+  // Fetch price from Coinbase
+  const fetchPrice = async (showError = true) => {
+    try {
+      const res = await axios.get("https://api.coinbase.com/v2/prices/SOL-USD/spot");
+      const price = parseFloat(res?.data?.data?.amount);
+      if (!isNaN(price)) {
+        setLastPrice((prev) => {
+          // detect dip relative to previous stored price
+          const prevPrice = prev ?? price;
+          // compute percent drop (positive number) when price < prevPrice
+          const dropPercent = prevPrice && price < prevPrice ? ((prevPrice - price) / prevPrice) * 100 : 0;
+
+          // Generate alert when drop exceeds threshold and metric enabled and trading is on
+          if (metrics.priceDrop && isTradingOn && dropPercent >= priceDropThreshold && price < prevPrice) {
+            const alert = {
+              id: Date.now(),
+              time: new Date().toLocaleTimeString(),
+              type: "Price Drop",
+              price: price.toFixed(2),
+              detail: `-${dropPercent.toFixed(2)}% in recent update`,
+            };
+            setAlerts((prevAlerts) => {
+              const next = [alert, ...prevAlerts].slice(0, 5);
+              return next;
+            });
+          }
+
+          return price;
+        });
+        setSolPrice(price);
+        setLastUpdated(new Date().toLocaleTimeString());
+      } else {
+        throw new Error("Invalid price response");
+      }
+    } catch (err) {
+      if (showError) {
+        // Non-intrusive console error; UI remains stable
+        // In production, you might show a toast
+        // console.error("Failed to fetch SOL price:", err);
+      }
+    }
+  };
+
+  // Poll every 30s
+  useEffect(() => {
+    fetchPrice(false); // initial (silent) fetch
+    pollingRef.current = setInterval(() => fetchPrice(false), 30_000);
+    return () => clearInterval(pollingRef.current);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [metrics.priceDrop, isTradingOn, priceDropThreshold]); // re-evaluate if relevant config changes
+
+  // Handlers
+  const toggleTimeframe = (key) => {
+    setTimeframes((tf) => ({ ...tf, [key]: !tf[key] }));
+  };
+
+  const toggleMetric = (key) => {
+    setMetrics((m) => ({ ...m, [key]: !m[key] }));
+  };
+
+  const manualRefresh = async () => {
+    await fetchPrice();
+  };
+
+  // Derived portfolio value
+  const portfolioSolValue = solPrice ? portfolio.holdingsSOL * solPrice : null;
+  const portfolioTotal = (portfolioSolValue ?? 0) + portfolio.holdingsUSDC;
+
+  // Neon accent class helper
+  const accentGlow = "bg-gradient-to-r from-cyan-400 via-purple-500 to-pink-500";
+
+  // Root class for dark mode
+  const rootBg = darkMode ? "bg-[#08020f] text-slate-100" : "bg-white text-slate-900";
+
+  return (
+    <div className={`${rootBg} min-h-screen transition-colors duration-200 px-4 py-6`}>
+      <div className="max-w-7xl mx-auto">
+        {/* Header */}
+        <header className="flex items-center justify-between gap-4 mb-6">
+          <div className="flex items-center gap-3">
+            <div className={`p-2 rounded-md ${accentGlow} shadow-[0_6px_30px_rgba(99,102,241,0.12)]`}>
+              <div className="w-10 h-10 flex items-center justify-center rounded">
+                {/* Minimal logo */}
+                <div className="text-white font-semibold tracking-tight text-lg">ES</div>
+              </div>
+            </div>
+            <div>
+              <h1 className="text-lg font-semibold leading-tight">Echo Swap</h1>
+              <p className="text-xs text-slate-400">Solana trading bot dashboard</p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-3">
+            {/* Dark mode */}
+            <button
+              aria-label="Toggle dark mode"
+              onClick={() => setDarkMode((s) => !s)}
+              className="flex items-center gap-2 px-3 py-2 rounded-md shadow-sm hover:opacity-90 transition"
+            >
+              <SunMoon className="w-4 h-4 text-amber-400" />
+              <span className="text-sm">{darkMode ? "Dark" : "Light"}</span>
+            </button>
+
+            {/* Trading ON/OFF */}
+            <div className="flex items-center gap-2 bg-opacity-10 px-3 py-2 rounded-md">
+              <div className="text-xs text-slate-400">Trading</div>
+              <button
+                onClick={() => setIsTradingOn((s) => !s)}
+                className={`flex items-center gap-2 px-2 py-1 rounded-full ${isTradingOn ? "bg-gradient-to-r from-cyan-400 to-purple-500 text-white" : "bg-slate-700/30 text-slate-300"}`}
+                title={isTradingOn ? "Trading ON" : "Trading OFF"}
+              >
+                <ToggleRight className="w-5 h-5" />
+                <span className="text-sm">{isTradingOn ? "ON" : "OFF"}</span>
+              </button>
+            </div>
+          </div>
+        </header>
+
+        {/* Main grid */}
+        <main className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {/* Left column: price & timeframes */}
+          <section className="lg:col-span-2 space-y-6">
+            {/* Price card */}
+            <div className={`rounded-xl p-4 ${darkMode ? "bg-gradient-to-br from-[#071026]/60 to-[#0b0616]/50" : "bg-slate-50"} border border-transparent`}>
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <div className="flex items-center gap-3">
+                    <div className={`p-2 rounded-md ${accentGlow} text-white shadow-lg`}>
+                      <svg width="28" height="28" viewBox="0 0 24 24" fill="none" className="opacity-90">
+                        <defs />
+                        <path d="M12 2L14.5 8H9.5L12 2Z" fill="white" opacity="0.85" />
+                        <circle cx="12" cy="13" r="6" fill="white" opacity="0.08" />
+                      </svg>
+                    </div>
+                    <div>
+                      <div className="text-xs text-slate-400">SOL Price</div>
+                      <div className="flex items-baseline gap-3">
+                        <div className="text-2xl font-semibold">{solPrice ? fmtUSD(solPrice) : "Loading..."}</div>
+                        <div className="text-xs text-slate-400">Updated: {lastUpdated ?? "—"}</div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-3">
+                  <button
+                    onClick={manualRefresh}
+                    className="flex items-center gap-2 px-3 py-2 rounded-md bg-slate-700/20 hover:bg-slate-700/30 transition"
+                    title="Refresh price"
+                  >
+                    <RefreshCw className="w-4 h-4" />
+                    <span className="text-sm">Refresh</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* quick stats row */}
+              <div className="mt-4 grid grid-cols-2 sm:grid-cols-4 gap-3">
+                <div className="p-3 rounded-md bg-black/10">
+                  <div className="text-xs text-slate-400">Trading Status</div>
+                  <div className="mt-1 font-medium">{isTradingOn ? "Active" : "Paused"}</div>
+                </div>
+
+                <div className="p-3 rounded-md bg-black/10">
+                  <div className="text-xs text-slate-400">Confidence</div>
+                  <div className="mt-1 font-medium">{confidence}%</div>
+                </div>
+
+                <div className="p-3 rounded-md bg-black/10">
+                  <div className="text-xs text-slate-400">Active TFs</div>
+                  <div className="mt-1 font-medium">{Object.values(timeframes).filter(Boolean).length}</div>
+                </div>
+
+                <div className="p-3 rounded-md bg-black/10">
+                  <div className="text-xs text-slate-400">Alerts (recent)</div>
+                  <div className="mt-1 font-medium">{alerts.length}</div>
+                </div>
+              </div>
+            </div>
+
+            {/* Timeframes & Metrics */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {/* Timeframes */}
+              <div className={`rounded-xl p-4 ${darkMode ? "bg-[#061021]/60" : "bg-white"} border border-transparent`}>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h3 className="text-sm font-semibold">Active Time Frames</h3>
+                    <p className="text-xs text-slate-400">Select which time frames the bot should trade on</p>
+                  </div>
+                  <Clock className="w-5 h-5 text-slate-300" />
+                </div>
+
+                <div className="mt-4 space-y-3">
+                  {[
+                    { key: "5m", label: "5 min" },
+                    { key: "15m", label: "15 min" },
+                    { key: "1h", label: "1 hour" },
+                    { key: "4h", label: "4 hours" },
+                    { key: "1d", label: "1 day" },
+                  ].map((tf) => (
+                    <label key={tf.key} className="flex items-center justify-between gap-3 p-2 rounded-md hover:bg-slate-700/5">
+                      <div className="flex items-center gap-3">
+                        <input
+                          type="checkbox"
+                          checked={!!timeframes[tf.key]}
+                          onChange={() => toggleTimeframe(tf.key)}
+                          className="w-4 h-4 accent-cyan-400"
+                        />
+                        <div>
+                          <div className="font-medium">{tf.label}</div>
+                          <div className="text-xs text-slate-400">Used in strategy</div>
+                        </div>
+                      </div>
+                      <div className={`text-xs ${timeframes[tf.key] ? "text-cyan-300" : "text-slate-400"}`}>
+                        {timeframes[tf.key] ? "Active" : "Off"}
+                      </div>
+                    </label>
+                  ))}
+                </div>
+              </div>
+
+              {/* Metrics */}
+              <div className={`rounded-xl p-4 ${darkMode ? "bg-[#061021]/60" : "bg-white"} border border-transparent`}>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h3 className="text-sm font-semibold">Active Metrics</h3>
+                    <p className="text-xs text-slate-400">Enable/adjust metrics used for decision making</p>
+                  </div>
+                  <Activity className="w-5 h-5 text-slate-300" />
+                </div>
+
+                <div className="mt-4 space-y-4">
+                  {/* Price drop */}
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex items-start gap-3">
+                      <TrendingDown className="w-5 h-5 text-pink-400" />
+                      <div>
+                        <div className="font-medium">Price drop %</div>
+                        <div className="text-xs text-slate-400">Trigger on sharp drops</div>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-3">
+                      <div className="text-xs text-slate-400 mr-2">Threshold</div>
+                      <input
+                        type="number"
+                        min={0.1}
+                        step={0.1}
+                        value={priceDropThreshold}
+                        onChange={(e) => setPriceDropThreshold(Math.max(0, parseFloat(e.target.value || 0)))}
+                        className="w-16 text-sm bg-transparent border border-slate-700/40 px-2 py-1 rounded"
+                      />
+                      <label className="inline-flex items-center gap-2 ml-3">
+                        <input type="checkbox" checked={metrics.priceDrop} onChange={() => toggleMetric("priceDrop")} className="w-5 h-5 accent-cyan-400" />
+                      </label>
+                    </div>
+                  </div>
+
+                  {/* Volume spike */}
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex items-start gap-3">
+                      <ZapIconFallback className="w-5 h-5 text-cyan-300" />
+                      <div>
+                        <div className="font-medium">Volume spike</div>
+                        <div className="text-xs text-slate-400">Detect abnormal volume</div>
+                      </div>
+                    </div>
+
+                    <label className="inline-flex items-center gap-2">
+                      <input type="checkbox" checked={metrics.volumeSpike} onChange={() => toggleMetric("volumeSpike")} className="w-5 h-5 accent-cyan-400" />
+                    </label>
+                  </div>
+
+                  {/* Twitter sentiment */}
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex items-start gap-3">
+                      <MessageCircle className="w-5 h-5 text-purple-400" />
+                      <div>
+                        <div className="font-medium">X/Twitter sentiment</div>
+                        <div className="text-xs text-slate-400">Use social sentiment signals</div>
+                      </div>
+                    </div>
+
+                    <label className="inline-flex items-center gap-2">
+                      <input type="checkbox" checked={metrics.twitterSentiment} onChange={() => toggleMetric("twitterSentiment")} className="w-5 h-5 accent-cyan-400" />
+                    </label>
+                  </div>
+
+                  {/* Whale */}
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex items-start gap-3">
+                      <Users className="w-5 h-5 text-cyan-300" />
+                      <div>
+                        <div className="font-medium">On-chain whale activity</div>
+                        <div className="text-xs text-slate-400">Large transfers & swaps</div>
+                      </div>
+                    </div>
+
+                    <label className="inline-flex items-center gap-2">
+                      <input type="checkbox" checked={metrics.whaleActivity} onChange={() => toggleMetric("whaleActivity")} className="w-5 h-5 accent-cyan-400" />
+                    </label>
+                  </div>
+
+                  {/* Confidence */}
+                  <div>
+                    <div className="text-xs text-slate-400">Confidence score: {confidence}%</div>
+                    <input
+                      type="range"
+                      min="0"
+                      max="100"
+                      value={confidence}
+                      onChange={(e) => setConfidence(parseInt(e.target.value, 10))}
+                      className="w-full mt-2 accent-cyan-400"
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Alerts list */}
+            <div className={`rounded-xl p-4 ${darkMode ? "bg-[#061021]/60" : "bg-white"} border border-transparent`}>
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="text-sm font-semibold">Live Dip Alerts</h3>
+                  <p className="text-xs text-slate-400">Most recent dip alerts (last 5)</p>
+                </div>
+                <AlertCircle className="w-5 h-5 text-pink-400" />
+              </div>
+
+              <div className="mt-3">
+                <div className="max-h-40 overflow-y-auto space-y-3 pr-2">
+                  {alerts.length === 0 ? (
+                    <div className="text-xs text-slate-400">No alerts yet.</div>
+                  ) : (
+                    alerts.map((a) => (
+                      <div
+                        key={a.id}
+                        className="flex items-center justify-between gap-3 p-3 rounded-md border border-slate-700/10 bg-gradient-to-r from-black/10 to-transparent"
+                      >
+                        <div className="flex items-center gap-3">
+                          <div className="w-10 h-10 rounded-md flex items-center justify-center bg-slate-800/30">
+                            <AlertCircle className="w-5 h-5 text-pink-400" />
+                          </div>
+                          <div>
+                            <div className="font-medium">{a.type} · {a.price !== "—" ? fmtUSD(Number(a.price)) : a.price}</div>
+                            <div className="text-xs text-slate-400">{a.detail}</div>
+                          </div>
+                        </div>
+
+                        <div className="text-xs text-slate-400">{a.time}</div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+            </div>
+          </section>
+
+          {/* Right column: portfolio & small widgets */}
+          <aside className="space-y-6">
+            {/* Portfolio summary */}
+            <div className={`rounded-xl p-4 ${darkMode ? "bg-gradient-to-b from-[#051025]/60 to-[#0b0620]/40" : "bg-white"} border border-transparent`}>
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="text-sm font-semibold">Portfolio Summary</h3>
+                  <p className="text-xs text-slate-400">Holdings & current value</p>
+                </div>
+                <Wallet className="w-5 h-5 text-cyan-300" />
+              </div>
+
+              <div className="mt-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="text-xs text-slate-400">SOL Holdings</div>
+                  <div className="font-medium">{portfolio.holdingsSOL} SOL</div>
+                </div>
+
+                <div className="flex items-center justify-between">
+                  <div className="text-xs text-slate-400">SOL Value</div>
+                  <div className="font-medium">{portfolioSolValue ? fmtUSD(portfolioSolValue) : "—"}</div>
+                </div>
+
+                <div className="flex items-center justify-between">
+                  <div className="text-xs text-slate-400">USDC</div>
+                  <div className="font-medium">{fmtUSD(portfolio.holdingsUSDC)}</div>
+                </div>
+
+                <div className="border-t border-slate-700/10 pt-3 flex items-center justify-between">
+                  <div className="text-xs text-slate-400">Total</div>
+                  <div className="text-lg font-semibold">{fmtUSD(portfolioTotal)}</div>
+                </div>
+              </div>
+            </div>
+
+            {/* Small status card */}
+            <div className={`rounded-xl p-4 ${darkMode ? "bg-[#061021]/60" : "bg-white"} border border-transparent`}>
+              <div className="flex items-center justify-between">
+                <div>
+                  <h4 className="text-sm font-semibold">Bot Health</h4>
+                  <p className="text-xs text-slate-400">Latency, connectivity & signals</p>
+                </div>
+                <div className="text-xs text-slate-400">OK</div>
+              </div>
+
+              <div className="mt-3">
+                <div className="text-xs text-slate-400">SOL price source</div>
+                <div className="font-medium">{solPrice ? "Coinbase" : "—"}</div>
+                <div className="mt-3 text-xs text-slate-400">Last checked</div>
+                <div className="font-medium">{lastUpdated ?? "—"}</div>
+              </div>
+            </div>
+
+            {/* Quick actions */}
+            <div className={`rounded-xl p-4 ${darkMode ? "bg-[#061021]/60" : "bg-white"} border border-transparent`}>
+              <div className="flex items-center justify-between">
+                <div>
+                  <h4 className="text-sm font-semibold">Quick Actions</h4>
+                  <p className="text-xs text-slate-400">Controls</p>
+                </div>
+                <div className="text-xs text-slate-400">—</div>
+              </div>
+
+              <div className="mt-3 grid grid-cols-2 gap-3">
+                <button
+                  onClick={() => {
+                    setAlerts([]);
+                  }}
+                  className="px-3 py-2 rounded-md bg-slate-700/20 hover:bg-slate-700/30"
+                >
+                  Clear Alerts
+                </button>
+                <button
+                  onClick={() => {
+                    setIsTradingOn(false);
+                    // mild safety action
+                  }}
+                  className="px-3 py-2 rounded-md bg-pink-500 text-white hover:opacity-95"
+                >
+                  Pause Trading
+                </button>
+              </div>
+            </div>
+          </aside>
+        </main>
+
+        {/* Footer */}
+        <footer className="mt-8 text-xs text-slate-500 flex items-center justify-between">
+          <div>Echo Swap • Solana bot dashboard</div>
+          <div>Built with React + Tailwind • Live price: {solPrice ? fmtUSD(solPrice) : "—"}</div>
+        </footer>
+      </div>
+    </div>
+  );
+}
+
+/*
+Fallback icon for "zap" if lucide-react doesn't include a direct Zap import in your environment.
+We define it inline to avoid breaking the UI if the exact icon name differs.
+*/
+function ZapIconFallback(props) {
+  return (
+    <svg {...props} viewBox="0 0 24 24" fill="none" className={`${props.className || ""}`}>
+      <path d="M13 2L3 14h7l-1 8L21 10h-7l-1-8z" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
