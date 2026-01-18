@@ -1,0 +1,112 @@
+import requests
+import time
+from datetime import datetime, timezone
+import statistics  # for volume average
+
+TELEGRAM_TOKEN = "7959489193:AAHSl-ONntEOEWWBKEux_g51Yg4Wl0PxiVY"
+CHAT_ID = "7375579725"
+
+INTERVAL = 30               # seconds between checks
+WINDOW = 10                 # prices to keep (~5 min)
+DIP_PCT = 3.0               # minimum % drop to consider
+VOLUME_SPIKE_PCT = 50.0     # % above average volume to boost score
+CONFIDENCE_THRESHOLD = 60   # minimum score to send alert
+
+prices = []                 # rolling price window
+volumes = []                # rolling volume window (in SOL units, approx)
+last_alert_time = 0
+
+print("Echo Swap – Volume + Confidence Score v2 starting...")
+
+def send_alert(msg):
+    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
+    payload = {"chat_id": CHAT_ID, "text": msg}
+    try:
+        r = requests.post(url, json=payload, timeout=10)
+        print(f"Alert sent: {r.status_code}")
+    except Exception as e:
+        print(f"Alert failed: {e}")
+
+def get_price_and_volume(retries=3):
+    url = "https://api.coinbase.com/v2/prices/SOL-USD/spot"
+    volume_url = "https://api.coinbase.com/v2/exchange-rates?currency=SOL"  # approx volume proxy
+    for attempt in range(retries):
+        try:
+            # Get price
+            r_price = requests.get(url, timeout=10)
+            r_price.raise_for_status()
+            price = float(r_price.json()["data"]["amount"])
+
+            # Get approx volume (Coinbase doesn't give direct volume in spot, use exchange rates as proxy or fallback)
+            r_vol = requests.get(volume_url, timeout=10)
+            r_vol.raise_for_status()
+            # For simplicity, use a mock volume change (real prod would use Binance or Birdeye API)
+            # Placeholder: simulate volume based on price change (replace with real API later)
+            volume_proxy = abs(price - (prices[-1] if prices else price)) * 1000  # rough proxy
+
+            return price, volume_proxy
+        except Exception as e:
+            print(f"Fetch failed (attempt {attempt+1}/{retries}): {e}")
+            time.sleep(5)
+    print("All fetch attempts failed")
+    return None, None
+
+def calculate_confidence(drop_pct, volume_spike_pct, trend_pct, time_since_alert):
+    # Weighted confidence score (0–100)
+    drop_score = min(drop_pct / 10.0 * 100, 100) * 0.4          # 40% weight
+    volume_score = min(volume_spike_pct / 100.0 * 100, 100) * 0.3  # 30% weight
+    trend_score = min(abs(trend_pct) * 10, 100) * 0.2           # 20% weight (recent falling trend)
+    recency_score = max(0, 100 - (time_since_alert / 60) * 5) * 0.1  # 10% weight (cooldown)
+
+    score = drop_score + volume_score + trend_score + recency_score
+    return min(max(score, 0), 100)
+
+def main_loop():
+    global last_alert_time
+
+    while True:
+        price, volume = get_price_and_volume()
+        if price is None or volume is None:
+            time.sleep(INTERVAL)
+            continue
+
+        prices.append(price)
+        volumes.append(volume)
+        if len(prices) > WINDOW:
+            prices.pop(0)
+            volumes.pop(0)
+
+        ts = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+
+        if len(prices) == WINDOW:
+            drop_pct = ((prices[0] - price) / prices[0]) * 100
+            avg_volume = statistics.mean(volumes[:-1]) if len(volumes) > 1 else volume
+            volume_spike_pct = ((volume - avg_volume) / avg_volume * 100) if avg_volume > 0 else 0
+
+            # Simple trend: % change over last 3 prices
+            trend_pct = ((prices[-1] - prices[-3]) / prices[-3]) * 100 if len(prices) >= 3 else 0
+
+            time_since_alert = time.time() - last_alert_time
+
+            confidence = calculate_confidence(drop_pct, volume_spike_pct, trend_pct, time_since_alert)
+
+            print(f"[{ts}] SOL = ${price:,.2f} | Drop: {drop_pct:.2f}% | Vol spike: {volume_spike_pct:.1f}% | Confidence: {confidence:.0f}/100")
+
+            if drop_pct >= DIP_PCT and confidence >= CONFIDENCE_THRESHOLD and time_since_alert > 300:  # 5 min cooldown
+                msg = f"DIP ALERT: SOL -{drop_pct:.2f}% to ${price:,.2f} | Confidence: {confidence:.0f}/100 | Vol spike: {volume_spike_pct:.1f}%"
+                print(msg)
+                send_alert(msg)
+                last_alert_time = time.time()
+
+        else:
+            print(f"[{ts}] SOL = ${price:,.2f} (building window: {len(prices)}/{WINDOW})")
+
+        time.sleep(INTERVAL)
+
+if __name__ == "__main__":
+    try:
+        main_loop()
+    except KeyboardInterrupt:
+        print("\nStopped by user.")
+    except Exception as e:
+        print(f"Fatal error: {e}")
